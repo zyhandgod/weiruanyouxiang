@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>张神收件 - 微软邮箱令牌管理</title>
+    <link rel="icon" type="image/png" href="logo222.png">
+    <link rel="shortcut icon" type="image/png" href="logo222.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=20260510a">
+</head>
+<body>
+    <div class="loading-screen" id="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <header class="topbar">
+        <div class="logo">
+            <div class="logo-img-wrap">
+                <img src="logo222.png" alt="logo" class="logo-img">
+            </div>
+            <span>张神收件</span>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div id="toast-container" class="toast-container"></div>
+
+        <!-- 邮箱管理 -->
+        <section id="emails" class="content-section active">
+
+            <div class="glass-card">
+                <div class="control-group">
+                    <div class="input-wrapper">
+                        <label>分隔符</label>
+                        <input type="text" id="delimiter" class="form-input" value="----" placeholder="默认: ----">
+                    </div>
+                    <div class="input-wrapper" style="flex: 2;">
+                        <label>快速搜索</label>
+                        <input type="text" id="search-input" class="form-input" placeholder="输入邮箱地址过滤...">
+                    </div>
+                </div>
+
+                <div class="input-wrapper" id="paste-wrapper" style="margin-bottom: 2.5rem; position: relative;">
+                    <textarea id="manual-input" class="form-input" placeholder="请将账号数据粘贴到这里  格式：账号----密码----Client_ID----Refresh_Token&#10;每行一条，粘贴完后点击下方「导入」按钮"></textarea>
+                    <div class="input-hint" id="paste-hint">
+                        <i class="fas fa-arrow-down"></i>
+                        粘贴完毕，点击下方「导入」按钮即可
+                    </div>
+                    <!-- 空状态引导箭头与气泡 -->
+                    <div class="empty-guide-bubble">
+                        <i class="fas fa-hand-pointer"></i>
+                        <div>
+                            <div class="guide-title">将账号数据粘贴到这里</div>
+                            <div class="guide-desc">Ctrl + V 粘贴，然后点击下方「导入」按钮</div>
+                        </div>
+                    </div>
+                </div>
+
+                <input type="file" id="file-input" accept=".txt" style="display:none">
+
+                <div class="action-bar">
+                    <div class="action-group action-group-primary">
+                        <button class="btn btn-primary" onclick="importEmailsManually()">
+                            <i class="fas fa-keyboard"></i> 导入
+                        </button>
+                        <button class="btn btn-primary" onclick="importEmails()">
+                            <i class="fas fa-file-import"></i> 文件导入
+                        </button>
+                        <button class="btn btn-outline" onclick="exportAllEmails()">
+                            <i class="fas fa-download"></i> 导出全部
+                        </button>
+                    </div>
+                    <div class="action-group action-group-danger">
+                        <button class="btn btn-ghost-danger" onclick="deleteAllEmails()">
+                            <i class="fas fa-times-circle"></i> 清空全部
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card" style="padding: 0; overflow: hidden;">
+                <div class="table-wrapper">
+                    <table id="email-table">
+                        <thead>
+                            <tr>
+                                <th width="40"><input type="checkbox" id="select-all"></th>
+                                <th width="40">#</th>
+                                <th>邮箱地址</th>
+                                <th>密码</th>
+                                <th>CLIENT ID</th>
+                                <th>REFRESH TOKEN</th>
+                                <th width="240">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <div id="no-data" class="empty-state" style="display: none;">
+                        <i class="fas fa-inbox"></i>
+                        <p>暂无数据，请先导入</p>
+                    </div>
+                </div>
+
+                <div class="pagination-bar pagination-container">
+                    <div>
+                        <span>每页显示：</span>
+                        <select class="page-select" onchange="changeItemsPerPage(this.value)">
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                    <div class="pagination-controls" id="pagination"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 邮件列表 -->
+        <section id="mail-list" class="content-section">
+            <div class="page-header" style="display: flex; align-items: center; gap: 15px;">
+                <button class="btn btn-primary btn-xs" onclick="backToEmailManagement()">
+                    <i class="fas fa-arrow-left"></i> 返回
+                </button>
+                <h2 style="margin: 0; font-size: 1.1rem;">邮件列表</h2>
+            </div>
+
+            <div class="email-status-bar">
+                <i class="fas fa-envelope-open-text" style="font-size: 1.5rem; color: var(--primary);"></i>
+                <div>
+                    <div style="font-size: 0.8rem; opacity: 0.7;">当前查看</div>
+                    <div id="current-email-display" style="font-family: monospace; font-size: 1rem; font-weight: 600;"></div>
+                </div>
+            </div>
+
+            <div class="glass-card" style="padding: 0; overflow: hidden;">
+                <div class="table-wrapper">
+                    <table id="mail-table">
+                        <thead>
+                            <tr>
+                                <th width="20%">发件人</th>
+                                <th width="40%">主题</th>
+                                <th width="20%">日期</th>
+                                <th width="10%">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <div id="no-mail-data" class="empty-state" style="display: none;">
+                        <i class="fas fa-envelope-open"></i>
+                        <p>没有邮件</p>
+                    </div>
+                </div>
+                <div class="pagination-bar pagination-container">
+                    <div class="pagination-controls pagination" id="pagination-mail"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 邮件详情模态框 -->
+    <div class="modal-overlay" id="mail-modal">
+        <div class="modal-box modal-large">
+            <div class="modal-header">
+                <span id="mail-modal-title">邮件详情</span>
+                <button onclick="closeMailModal()" style="background:none; border:none; cursor:pointer;"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="font-size: 0.9rem; line-height: 1.8;">
+                <div><span style="color: var(--secondary);">发件人:</span> <span id="mail-modal-sender"></span></div>
+                <div><span style="color: var(--secondary);">主题:</span> <span id="mail-modal-subject"></span></div>
+                <div><span style="color: var(--secondary);">日期:</span> <span id="mail-modal-date"></span></div>
+            </div>
+            <div class="mail-content-box" id="mail-modal-content"></div>
+            <div style="text-align: right; margin-top: 1.5rem;">
+                <button class="btn btn-primary" onclick="closeMailModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 确认对话框 -->
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-box" style="max-width: 420px;">
+            <div class="modal-header">
+                <span id="confirm-modal-title">确认</span>
+                <button onclick="closeConfirm(false)" style="background:none; border:none; cursor:pointer;"><i class="fas fa-times"></i></button>
+            </div>
+            <p id="confirm-modal-message" style="color: var(--text-main); line-height: 1.6; margin-bottom: 1.5rem;"></p>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-cancel" onclick="closeConfirm(false)">取消</button>
+                <button class="btn btn-primary" id="confirm-ok-btn" onclick="closeConfirm(true)">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 空状态引导遮罩 -->
+    <div class="empty-guide-overlay" id="empty-guide"></div>
+
+    <script src="script.js?v=20260510a"></script>
+</body>
+</html>
