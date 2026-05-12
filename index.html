@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>张神收件 - 微软邮箱令牌管理</title>
+    <title>微软邮箱收件 - 微软邮箱令牌管理</title>
     <link rel="icon" type="image/png" href="logo222.png">
     <link rel="shortcut icon" type="image/png" href="logo222.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -19,7 +19,7 @@
             <div class="logo-img-wrap">
                 <img src="logo222.png" alt="logo" class="logo-img">
             </div>
-            <span>张神收件</span>
+            <span>微软邮箱收件</span>
         </div>
     </header>
 
@@ -122,6 +122,9 @@
                     <i class="fas fa-arrow-left"></i> 返回
                 </button>
                 <h2 style="margin: 0; font-size: 1.1rem;">邮件列表</h2>
+                <button class="btn btn-outline btn-xs" onclick="refreshCurrentMailbox()">
+                    <i class="fas fa-sync-alt"></i> 刷新收件箱
+                </button>
             </div>
 
             <div class="email-status-bar">

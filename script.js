@@ -4,7 +4,7 @@ let itemsPerPage = 10;
 let mailData = [];
 let currentMailPage = 1;
 const mailItemsPerPage = 10;
-let currentEmailInfo = null;
+let currentEmailInfo = null; // { email, mailbox, mailboxCode, refreshToken, clientId }
 let isSearching = false;
 let searchResults = [];
 let selectedItems = [];
@@ -160,7 +160,8 @@ function updateSelectedItems() {
 function loadData() {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     renderTable(data);
-    document.getElementById('account-count').textContent = data.length;
+    const accountCount = document.getElementById('account-count');
+    if (accountCount) accountCount.textContent = data.length;
 }
 
 function renderTable(data) {
@@ -362,7 +363,7 @@ function viewInbox(index) {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     const item = data[index];
     if (!item) return;
-    currentEmailInfo = { email: item.email, mailbox: '收件箱' };
+    currentEmailInfo = { email: item.email, mailbox: '收件箱', mailboxCode: 'INBOX', refreshToken: item.refreshToken, clientId: item.clientId };
     currentMailPage = 1;
     loadMailList(item.refreshToken, item.clientId, item.email, 'INBOX');
 }
@@ -371,12 +372,18 @@ function viewJunk(index) {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     const item = data[index];
     if (!item) return;
-    currentEmailInfo = { email: item.email, mailbox: '垃圾箱' };
+    currentEmailInfo = { email: item.email, mailbox: '垃圾箱', mailboxCode: 'Junk', refreshToken: item.refreshToken, clientId: item.clientId };
     currentMailPage = 1;
     loadMailList(item.refreshToken, item.clientId, item.email, 'Junk');
 }
 
 function loadMailList(refreshToken, clientId, email, mailbox) {
+    if (currentEmailInfo) {
+        currentEmailInfo.refreshToken = refreshToken;
+        currentEmailInfo.clientId = clientId;
+        currentEmailInfo.email = email;
+        currentEmailInfo.mailboxCode = mailbox;
+    }
     showLoading();
     const apiUrl = `/api/mail-all?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}&email=${encodeURIComponent(email)}&mailbox=${mailbox}&response_type=json&password=`;
 
@@ -407,11 +414,17 @@ function loadMailList(refreshToken, clientId, email, mailbox) {
         .finally(hideLoading);
 }
 
+function refreshCurrentMailbox() {
+    if (!currentEmailInfo) return showToast('提示', '当前没有可刷新的邮箱', 'warning');
+    currentMailPage = 1;
+    loadMailList(currentEmailInfo.refreshToken, currentEmailInfo.clientId, currentEmailInfo.email, currentEmailInfo.mailboxCode || 'INBOX');
+}
+
 function backToEmailManagement() {
     document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
     document.getElementById('emails').classList.add('active');
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector('.nav-tab[data-target="emails"]').classList.add('active');
+    document.querySelector('.nav-tab[data-target="emails"]')?.classList.add('active');
 }
 
 function renderMailTable(data) {
@@ -471,6 +484,18 @@ function viewMail(index) {
 function closeMailModal() {
     document.getElementById('mail-modal').style.display = 'none';
 }
+
+// 邮件详情弹窗：支持 ESC 和点击空白遮罩关闭
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const mailModal = document.getElementById('mail-modal');
+        if (mailModal && mailModal.style.display === 'flex') closeMailModal();
+    }
+});
+
+document.getElementById('mail-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeMailModal();
+});
 
 // 自定义确认对话框
 let _confirmResolve = null;
