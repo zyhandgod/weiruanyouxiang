@@ -363,29 +363,30 @@ function viewInbox(index) {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     const item = data[index];
     if (!item) return;
-    currentEmailInfo = { email: item.email, mailbox: '收件箱', mailboxCode: 'INBOX', refreshToken: item.refreshToken, clientId: item.clientId };
+    currentEmailInfo = { email: item.email, mailbox: '收件箱', mailboxCode: 'INBOX', refreshToken: item.refreshToken, clientId: item.clientId, password: item.password };
     currentMailPage = 1;
-    loadMailList(item.refreshToken, item.clientId, item.email, 'INBOX');
+    loadMailList(item.refreshToken, item.clientId, item.email, 'INBOX', item.password);
 }
 
 function viewJunk(index) {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     const item = data[index];
     if (!item) return;
-    currentEmailInfo = { email: item.email, mailbox: '垃圾箱', mailboxCode: 'Junk', refreshToken: item.refreshToken, clientId: item.clientId };
+    currentEmailInfo = { email: item.email, mailbox: '垃圾箱', mailboxCode: 'Junk', refreshToken: item.refreshToken, clientId: item.clientId, password: item.password };
     currentMailPage = 1;
-    loadMailList(item.refreshToken, item.clientId, item.email, 'Junk');
+    loadMailList(item.refreshToken, item.clientId, item.email, 'Junk', item.password);
 }
 
-function loadMailList(refreshToken, clientId, email, mailbox) {
+function loadMailList(refreshToken, clientId, email, mailbox, password = '') {
     if (currentEmailInfo) {
         currentEmailInfo.refreshToken = refreshToken;
         currentEmailInfo.clientId = clientId;
         currentEmailInfo.email = email;
         currentEmailInfo.mailboxCode = mailbox;
+        currentEmailInfo.password = password;
     }
     showLoading();
-    const apiUrl = `/api/mail-all?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}&email=${encodeURIComponent(email)}&mailbox=${mailbox}&response_type=json&password=`;
+    const apiUrl = `/api/mail-all?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}&email=${encodeURIComponent(email)}&mailbox=${encodeURIComponent(mailbox)}&response_type=json&password=${encodeURIComponent(password || '')}`;
 
     fetch(apiUrl)
         .then(async res => {
@@ -396,6 +397,7 @@ function loadMailList(refreshToken, clientId, email, mailbox) {
             return data;
         })
         .then(data => {
+            if (data && data.error) throw new Error(data.error);
             if (Array.isArray(data)) mailData = data;
             else if (data && Array.isArray(data.data)) mailData = data.data;
             else mailData = [];
@@ -420,7 +422,7 @@ function loadMailList(refreshToken, clientId, email, mailbox) {
 function refreshCurrentMailbox() {
     if (!currentEmailInfo) return showToast('提示', '当前没有可刷新的邮箱', 'warning');
     currentMailPage = 1;
-    loadMailList(currentEmailInfo.refreshToken, currentEmailInfo.clientId, currentEmailInfo.email, currentEmailInfo.mailboxCode || 'INBOX');
+    loadMailList(currentEmailInfo.refreshToken, currentEmailInfo.clientId, currentEmailInfo.email, currentEmailInfo.mailboxCode || 'INBOX', currentEmailInfo.password || '');
 }
 
 function backToEmailManagement() {

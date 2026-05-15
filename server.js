@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const TOKEN_HOST = 'login.microsoftonline.com';
 const GRAPH_HOST = 'graph.microsoft.com';
+const LINGPAI_HOST = 'lingpaixitong.com';
 
 const mimeTypes = {
     '.html': 'text/html; charset=utf-8',
@@ -126,52 +127,44 @@ function mapGraphMessage(message) {
 async function handleMailAll(req, res, parsedUrl) {
     const refreshToken = parsedUrl.searchParams.get('refresh_token');
     const clientId = parsedUrl.searchParams.get('client_id');
-    const mailbox = normalizeMailbox(parsedUrl.searchParams.get('mailbox'));
+    const email = parsedUrl.searchParams.get('email') || '';
+    const password = parsedUrl.searchParams.get('password') || '';
+    const mailboxParam = parsedUrl.searchParams.get('mailbox') || 'INBOX';
 
     if (!refreshToken || !clientId) {
         return sendJson(res, 400, { error: '缺少 refresh_token 或 client_id' });
     }
 
-    try {
-        const accessToken = await exchangeRefreshToken(refreshToken, clientId);
-        const graphPath =
-            `/v1.0/me/mailFolders/${encodeURIComponent(mailbox)}/messages` +
-            '?$top=100' +
-            '&$orderby=receivedDateTime desc' +
-            '&$select=id,subject,from,sender,receivedDateTime,sentDateTime,body,bodyPreview,isRead';
+    const upstreamParams = new URLSearchParams({
+        refresh_token: refreshToken,
+        client_id: clientId,
+        email,
+        mailbox: mailboxParam,
+        response_type: parsedUrl.searchParams.get('response_type') || 'json',
+        password
+    });
 
-        const result = await requestJson({
-            hostname: GRAPH_HOST,
+    try {
+        const upstream = await requestJson({
+            hostname: LINGPAI_HOST,
+            servername: LINGPAI_HOST,
             port: 443,
-            path: graphPath,
+            path: `/api/mail-all?${upstreamParams.toString()}`,
             method: 'GET',
+            rejectUnauthorized: false,
             headers: {
-                'Authorization': `Bearer ${accessToken}`,
                 'Accept': 'application/json',
-                'Prefer': 'outlook.body-content-type="html"'
+                'Host': LINGPAI_HOST,
+                'Referer': `https://${LINGPAI_HOST}/`,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
             }
         });
 
-        if (result.statusCode < 200 || result.statusCode >= 300) {
-            return sendJson(res, result.statusCode, {
-                error: result.data?.error?.message || result.data?.error || `Microsoft Graph 请求失败: ${result.statusCode}`,
-                details: result.data
-            });
-        }
-
-        const messages = Array.isArray(result.data?.value) ? result.data.value.map(mapGraphMessage) : [];
-        return sendJson(res, 200, {
-            code: 0,
-            source: 'microsoft-graph',
-            mailbox,
-            count: messages.length,
-            data: messages
-        });
-    } catch (err) {
-        console.error('[Graph Mail] error:', err.message);
-        return sendJson(res, 500, {
-            error: err.message || 'Microsoft Graph 请求失败',
-            details: err.details
+        return sendJson(res, upstream.statusCode || 200, upstream.data || {});
+    } catch (upstreamErr) {
+        console.error('[Lingpai Mail] error:', upstreamErr.message);
+        return sendJson(res, 502, {
+            error: `lingpaixitong 收件接口请求失败: ${upstreamErr.message}`
         });
     }
 }
