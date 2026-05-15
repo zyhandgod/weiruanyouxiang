@@ -388,9 +388,12 @@ function loadMailList(refreshToken, clientId, email, mailbox) {
     const apiUrl = `/api/mail-all?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}&email=${encodeURIComponent(email)}&mailbox=${mailbox}&response_type=json&password=`;
 
     fetch(apiUrl)
-        .then(res => {
-            if (!res.ok && res.status !== 304) throw new Error(`请求失败: ${res.status}`);
-            return res.json();
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok && res.status !== 304) {
+                throw new Error(data.error || data.details?.error_description || data.details?.error?.message || `请求失败: ${res.status}`);
+            }
+            return data;
         })
         .then(data => {
             if (Array.isArray(data)) mailData = data;
