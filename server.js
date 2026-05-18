@@ -522,11 +522,17 @@ async function fetchImapMessageBody({ email, accessToken, mailboxCode, uid }) {
 
 async function fetchOfficialMessages({ clientId, refreshToken, email, mailbox }) {
     // 当前导入的数据是 M.* 格式的 Microsoft consumer refresh_token。
-    // 这类 token 通常能官方 IMAP OAuth 收件，但不一定有 Graph Mail.Read 授权。
+    // 这类 token 通常能调用 Outlook REST v2（官方旧接口），比 IMAP 快很多；
+    // 如果 REST 不可用，再回退官方 IMAP OAuth。
     if (String(refreshToken).startsWith('M.')) {
         if (!email) throw new Error('IMAP 官方收件需要 email 参数');
-        const imapToken = await getImapAccessToken(clientId, refreshToken);
-        return fetchImapMessages({ email, accessToken: imapToken, mailboxCode: mailbox });
+        const outlookToken = await getImapAccessToken(clientId, refreshToken);
+        try {
+            return fetchOutlookRestMessages(outlookToken, mailbox);
+        } catch (e) {
+            console.warn('Outlook REST 不可用，回退官方 IMAP:', e && e.message ? e.message : e);
+            return fetchImapMessages({ email, accessToken: outlookToken, mailboxCode: mailbox });
+        }
     }
 
     try {
@@ -538,6 +544,45 @@ async function fetchOfficialMessages({ clientId, refreshToken, email, mailbox })
         const imapToken = await getImapAccessToken(clientId, refreshToken);
         return fetchImapMessages({ email, accessToken: imapToken, mailboxCode: mailbox });
     }
+}
+
+async function fetchOutlookRestMessages(accessToken, mailboxCode) {
+    const key = String(mailboxCode || 'INBOX').toLowerCase();
+    const folder = (key === 'junk' || key === 'junkemail' || key === 'junk email')
+        ? 'JunkEmail'
+        : 'Inbox';
+
+    const apiUrl = new URL(`https://outlook.office.com/api/v2.0/me/MailFolders/${folder}/Messages`);
+    apiUrl.searchParams.set('$top', String(IMAP_LIST_LIMIT));
+    apiUrl.searchParams.set('$select', 'From,Subject,ReceivedDateTime,BodyPreview,Body');
+    apiUrl.searchParams.set('$orderby', 'ReceivedDateTime desc');
+
+    const resp = await fetch(apiUrl, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json'
+        }
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+        throw new Error(json.error?.message || json.error || `Outlook REST 请求失败：HTTP ${resp.status}`);
+    }
+
+    const items = Array.isArray(json.value) ? json.value : [];
+    return items.map(m => {
+        const from = m.From?.EmailAddress || m.from?.emailAddress || {};
+        const body = m.Body || m.body || {};
+        const content = body.Content || body.content || '';
+        const contentType = String(body.ContentType || body.contentType || '').toLowerCase();
+        return {
+            id: m.Id || m.id || '',
+            send: from.Address || from.address || from.Name || from.name || '',
+            subject: m.Subject || m.subject || '(无主题)',
+            date: formatDateTime(m.ReceivedDateTime || m.receivedDateTime || ''),
+            html: contentType === 'html' ? content : '',
+            text: contentType === 'html' ? (m.BodyPreview || m.bodyPreview || '') : (content || m.BodyPreview || m.bodyPreview || '')
+        };
+    });
 }
 
 async function fetchOfficialMessageBody({ clientId, refreshToken, email, mailbox, uid }) {
@@ -721,6 +766,6 @@ server.listen(PORT, '127.0.0.1', () => {
     console.log('====================================');
     console.log(`  微软邮箱管理系统已启动`);
     console.log(`  访问地址: http://localhost:${PORT}`);
-    console.log(`  API: Microsoft 官方 IMAP/Graph (/api/mail-all)`);
+    console.log(`  API: Microsoft 官方 Outlook REST/IMAP/Graph (/api/mail-all)`);
     console.log('====================================');
 });
