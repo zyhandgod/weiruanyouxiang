@@ -363,41 +363,38 @@ function viewInbox(index) {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     const item = data[index];
     if (!item) return;
-    currentEmailInfo = { email: item.email, mailbox: '收件箱', mailboxCode: 'INBOX', refreshToken: item.refreshToken, clientId: item.clientId, password: item.password };
+    currentEmailInfo = { email: item.email, mailbox: '收件箱', mailboxCode: 'INBOX', refreshToken: item.refreshToken, clientId: item.clientId };
     currentMailPage = 1;
-    loadMailList(item.refreshToken, item.clientId, item.email, 'INBOX', item.password);
+    loadMailList(item.refreshToken, item.clientId, item.email, 'INBOX');
 }
 
 function viewJunk(index) {
     const data = JSON.parse(localStorage.getItem('emailData')) || [];
     const item = data[index];
     if (!item) return;
-    currentEmailInfo = { email: item.email, mailbox: '垃圾箱', mailboxCode: 'Junk', refreshToken: item.refreshToken, clientId: item.clientId, password: item.password };
+    currentEmailInfo = { email: item.email, mailbox: '垃圾箱', mailboxCode: 'Junk', refreshToken: item.refreshToken, clientId: item.clientId };
     currentMailPage = 1;
-    loadMailList(item.refreshToken, item.clientId, item.email, 'Junk', item.password);
+    loadMailList(item.refreshToken, item.clientId, item.email, 'Junk');
 }
 
-function loadMailList(refreshToken, clientId, email, mailbox, password = '') {
+function loadMailList(refreshToken, clientId, email, mailbox) {
     if (currentEmailInfo) {
         currentEmailInfo.refreshToken = refreshToken;
         currentEmailInfo.clientId = clientId;
         currentEmailInfo.email = email;
         currentEmailInfo.mailboxCode = mailbox;
-        currentEmailInfo.password = password;
     }
     showLoading();
-    const apiUrl = `/api/mail-all?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}&email=${encodeURIComponent(email)}&mailbox=${encodeURIComponent(mailbox)}&response_type=json&password=${encodeURIComponent(password || '')}`;
+    // 改为本地 /api/mail-all（Microsoft 官方 IMAP/Graph）
+    // 列表接口直接返回正文，保证点击“查看”马上能看到内容
+    const apiUrl = `/api/mail-all?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}&email=${encodeURIComponent(email)}&mailbox=${encodeURIComponent(mailbox)}`;
 
     fetch(apiUrl)
-        .then(async res => {
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok && res.status !== 304) {
-                throw new Error(data.error || data.details?.error_description || data.details?.error?.message || `请求失败: ${res.status}`);
-            }
-            return data;
+        .then(res => {
+            if (!res.ok && res.status !== 304) throw new Error(`请求失败: ${res.status}`);
+            return res.json();
         })
         .then(data => {
-            if (data && data.error) throw new Error(data.error);
             if (Array.isArray(data)) mailData = data;
             else if (data && Array.isArray(data.data)) mailData = data.data;
             else mailData = [];
@@ -422,7 +419,7 @@ function loadMailList(refreshToken, clientId, email, mailbox, password = '') {
 function refreshCurrentMailbox() {
     if (!currentEmailInfo) return showToast('提示', '当前没有可刷新的邮箱', 'warning');
     currentMailPage = 1;
-    loadMailList(currentEmailInfo.refreshToken, currentEmailInfo.clientId, currentEmailInfo.email, currentEmailInfo.mailboxCode || 'INBOX', currentEmailInfo.password || '');
+    loadMailList(currentEmailInfo.refreshToken, currentEmailInfo.clientId, currentEmailInfo.email, currentEmailInfo.mailboxCode || 'INBOX');
 }
 
 function backToEmailManagement() {
@@ -475,15 +472,36 @@ function renderMailPagination(total) {
     }
 }
 
-function viewMail(index) {
+async function viewMail(index) {
     const item = mailData[index];
     if (!item) return;
     document.getElementById('mail-modal-title').textContent = item.subject || '无主题';
     document.getElementById('mail-modal-sender').textContent = item.send || '未知';
     document.getElementById('mail-modal-subject').textContent = item.subject || '';
     document.getElementById('mail-modal-date').textContent = item.date || '';
-    document.getElementById('mail-modal-content').innerHTML = item.html || item.text || '<span style="color:var(--text-muted)">无内容</span>';
+    document.getElementById('mail-modal-content').innerHTML = item.html || item.text || '<span style="color:var(--text-muted)">正文加载中...</span>';
     document.getElementById('mail-modal').style.display = 'flex';
+
+    // IMAP 列表为提速只返回头部；点击详情时再拉正文，并写回缓存，第二次打开无需重复请求。
+    if ((!item.html && !item.text) && item.uid && currentEmailInfo) {
+        try {
+            const bodyUrl = `/api/mail-body?refresh_token=${encodeURIComponent(currentEmailInfo.refreshToken)}&client_id=${encodeURIComponent(currentEmailInfo.clientId)}&email=${encodeURIComponent(currentEmailInfo.email)}&mailbox=${encodeURIComponent(currentEmailInfo.mailboxCode || 'INBOX')}&uid=${encodeURIComponent(item.uid)}`;
+            const res = await fetch(bodyUrl);
+            if (!res.ok) throw new Error(`请求失败: ${res.status}`);
+            const detail = await res.json();
+            Object.assign(item, detail);
+            document.getElementById('mail-modal-title').textContent = item.subject || '无主题';
+            document.getElementById('mail-modal-sender').textContent = item.send || '未知';
+            document.getElementById('mail-modal-subject').textContent = item.subject || '';
+            document.getElementById('mail-modal-date').textContent = item.date || '';
+        } catch (err) {
+            console.error('加载邮件正文失败:', err);
+            document.getElementById('mail-modal-content').innerHTML = `<span style="color:var(--danger)">正文加载失败: ${err.message}</span>`;
+            return;
+        }
+    }
+
+    document.getElementById('mail-modal-content').innerHTML = item.html || item.text || '<span style="color:var(--text-muted)">无内容</span>';
 }
 
 function closeMailModal() {
