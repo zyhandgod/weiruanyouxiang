@@ -528,7 +528,7 @@ async function fetchOfficialMessages({ clientId, refreshToken, email, mailbox })
         if (!email) throw new Error('IMAP 官方收件需要 email 参数');
         const outlookToken = await getImapAccessToken(clientId, refreshToken);
         try {
-            return fetchOutlookRestMessages(outlookToken, mailbox);
+            return await fetchOutlookRestMessages(outlookToken, mailbox);
         } catch (e) {
             console.warn('Outlook REST 不可用，回退官方 IMAP:', e && e.message ? e.message : e);
             return fetchImapMessages({ email, accessToken: outlookToken, mailboxCode: mailbox });
