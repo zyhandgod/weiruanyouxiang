@@ -92,7 +92,7 @@ async function getImapAccessToken(clientId, refreshToken) {
         return cached.accessToken;
     }
 
-    const attempts = [
+    const microsoftIdentityAttempts = [
         {
             endpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
             body: {
@@ -111,6 +111,26 @@ async function getImapAccessToken(clientId, refreshToken) {
                 scope: 'https://outlook.office.com/IMAP.AccessAsUser.All offline_access'
             }
         },
+    ];
+    const liveAttempts = [
+        {
+            endpoint: 'https://login.live.com/oauth20_token.srf',
+            body: {
+                client_id: clientId,
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken,
+                scope: 'service::outlook.office.com::MBI_SSL'
+            }
+        },
+        {
+            endpoint: 'https://login.live.com/oauth20_token.srf',
+            body: {
+                client_id: clientId,
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken,
+                scope: 'wl.imap wl.offline_access'
+            }
+        },
         {
             endpoint: 'https://login.live.com/oauth20_token.srf',
             body: {
@@ -120,6 +140,9 @@ async function getImapAccessToken(clientId, refreshToken) {
             }
         }
     ];
+    const attempts = String(refreshToken).startsWith('M.')
+        ? [...liveAttempts, ...microsoftIdentityAttempts]
+        : [...microsoftIdentityAttempts, ...liveAttempts];
 
     let lastErr = null;
     for (const attempt of attempts) {
@@ -521,29 +544,36 @@ async function fetchImapMessageBody({ email, accessToken, mailboxCode, uid }) {
 }
 
 async function fetchOfficialMessages({ clientId, refreshToken, email, mailbox }) {
-    // 当前导入的数据是 M.* 格式的 Microsoft consumer refresh_token。
-    // 这类 token 通常能调用 Outlook REST v2（官方旧接口），比 IMAP 快很多；
-    // 如果 REST 不可用，再回退官方 IMAP OAuth。
-    if (String(refreshToken).startsWith('M.')) {
-        if (!email) throw new Error('IMAP 官方收件需要 email 参数');
-        const outlookToken = await getImapAccessToken(clientId, refreshToken);
-        try {
-            return await fetchOutlookRestMessages(outlookToken, mailbox);
-        } catch (e) {
-            console.warn('Outlook REST 不可用，回退官方 IMAP:', e && e.message ? e.message : e);
-            return fetchImapMessages({ email, accessToken: outlookToken, mailboxCode: mailbox });
-        }
-    }
+    let lastErr = null;
 
     try {
         const graphToken = await getGraphAccessToken(clientId, refreshToken);
-        return fetchGraphMessages(graphToken, mailbox);
+        return await fetchGraphMessages(graphToken, mailbox);
     } catch (e) {
-        console.warn('Graph 不可用，回退官方 IMAP:', e && e.message ? e.message : e);
-        if (!email) throw new Error('IMAP 官方收件需要 email 参数');
-        const imapToken = await getImapAccessToken(clientId, refreshToken);
-        return fetchImapMessages({ email, accessToken: imapToken, mailboxCode: mailbox });
+        lastErr = e;
+        console.warn('Graph 不可用:', e && e.message ? e.message : e);
     }
+
+    try {
+        const outlookToken = await getImapAccessToken(clientId, refreshToken);
+        return await fetchOutlookRestMessages(outlookToken, mailbox);
+    } catch (e) {
+        lastErr = e;
+        console.warn('Outlook REST 不可用:', e && e.message ? e.message : e);
+    }
+
+    if (email) {
+        try {
+            const imapToken = await getImapAccessToken(clientId, refreshToken);
+            return await fetchImapMessages({ email, accessToken: imapToken, mailboxCode: mailbox });
+        } catch (e) {
+            lastErr = e;
+            console.warn('IMAP 不可用:', e && e.message ? e.message : e);
+        }
+    }
+
+    const msg = lastErr && lastErr.message ? lastErr.message : '微软收件接口不可用';
+    throw new Error(`获取收件列表失败：${msg}`);
 }
 
 async function fetchOutlookRestMessages(accessToken, mailboxCode) {
@@ -679,7 +709,12 @@ const server = http.createServer((req, res) => {
                 return sendJson(res, 200, list);
             } catch (e) {
                 console.error('Mail API 错误:', e && e.message ? e.message : e);
-                return sendJson(res, 500, { error: String(e && e.message ? e.message : e) });
+                const message = String(e && e.message ? e.message : e);
+                const authLike = /AUTHENTICATE|401|invalid_grant|AADSTS|not enabled for consumers|client does not exist/i.test(message);
+                const detail = authLike
+                    ? `${message}。可能原因：refresh_token 没有 Outlook 邮件权限，或该邮箱账号未开启 IMAP。`
+                    : message;
+                return sendJson(res, authLike ? 401 : 500, { error: detail });
             }
         })();
         return;
